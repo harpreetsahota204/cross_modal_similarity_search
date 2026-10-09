@@ -1,15 +1,29 @@
 """
 Cross-modal retrieval operators.
 
+-   :class:`BuildIndex` embeds samples with EmbeddingGemma 2 and creates a
+    LanceDB similarity index. The panel opens it for **Build Cross-Modal
+    Index**, and it can be run on its own or delegated
+-   :class:`Search` searches the indexes with text or the selected samples,
+    for use from the operator browser or Python. The panel doesn't use it; it
+    calls :meth:`panel.CrossModalRetrievalPanel.search`
+
 | Copyright 2017-2026, Voxel51, Inc.
 | `voxel51.com <https://voxel51.com/>`_
 |
 """
+from __future__ import annotations
+
+from collections.abc import Generator
+from typing import Any
+
 import fiftyone.operators as foo
 import fiftyone.operators.types as types
+from fiftyone.operators.executor import ExecutionContext
 
 from . import engine
 
+# How each modality is offered in the build form
 _MODALITY_LABELS = {
     "image": "Image",
     "video": "Video (frames)",
@@ -17,6 +31,7 @@ _MODALITY_LABELS = {
     "video+audio": "Video + audio (one vector)",
 }
 
+# Default embeddings field / brain key suffix: eg2_<suffix>
 _FIELD_SUFFIXES = {
     "image": "image",
     "video": "video",
@@ -26,7 +41,8 @@ _FIELD_SUFFIXES = {
 
 # Model settings the build operator exposes:
 # name -> (modalities they apply to, label, description, default)
-_SETTINGS = {
+# A float default makes a float input, an int default an int input
+_SETTINGS: dict[str, tuple[tuple[str, ...], str, str, float | int]] = {
     "fps": (
         ("video", "video+audio"),
         "Frames per second",
@@ -48,7 +64,10 @@ _SETTINGS = {
 }
 
 
-def _build_view(ctx):
+def _build_view(ctx: ExecutionContext) -> Any:
+    """The samples to embed: the chosen target view, narrowed to one group
+    slice on grouped datasets (an index holds one slice's media).
+    """
     view = ctx.target_view()
     group_slice = ctx.params.get("group_slice")
     if ctx.dataset.media_type == "group" and group_slice:
@@ -57,7 +76,10 @@ def _build_view(ctx):
     return view
 
 
-def _default_name(ctx, modality):
+def _default_name(ctx: ExecutionContext, modality: str) -> str:
+    """The default field and brain key, e.g. ``eg2_av`` or ``eg2_audio_left``
+    for the ``left`` slice of a grouped dataset.
+    """
     name = "eg2_" + _FIELD_SUFFIXES[modality]
     group_slice = ctx.params.get("group_slice")
     if ctx.dataset.media_type == "group" and group_slice:
@@ -67,8 +89,15 @@ def _default_name(ctx, modality):
 
 
 class BuildIndex(foo.Operator):
+    """Embeds samples with EmbeddingGemma 2 and indexes them in LanceDB.
+
+    Vectors are written to a sample field first and the index is created from
+    that field, so a lost LanceDB table can be rebuilt without re-embedding.
+    """
+
     @property
-    def config(self):
+    def config(self) -> foo.OperatorConfig:
+        """The operator's name and how it may run (immediately or delegated)."""
         return foo.OperatorConfig(
             name="build_index",
             label="Cross-modal: build EmbeddingGemma 2 index",
@@ -78,13 +107,22 @@ class BuildIndex(foo.Operator):
                 "any modality can search them"
             ),
             icon="travel_explore",
+            # the form changes as choices are made (modality -> settings)
             dynamic=True,
+            # yields progress updates while embedding
             execute_as_generator=True,
             allow_immediate_execution=True,
             allow_delegated_execution=True,
         )
 
-    def resolve_input(self, ctx):
+    def resolve_input(self, ctx: ExecutionContext) -> types.Property:
+        """Builds the form. Called again on every change, since it's dynamic.
+
+        The form asks for: target view, group slice (grouped datasets),
+        modality, embeddings field, overwrite (if some samples already have
+        vectors), brain key, dimensions, and the settings that apply to the
+        chosen modality.
+        """
         inputs = types.Object()
         inputs.view_target(ctx)
 
@@ -127,6 +165,8 @@ class BuildIndex(foo.Operator):
             label="Embed the samples as",
             view=choices,
         )
+        # params hold the current form values; fall back to defaults on the
+        # first render
         modality = ctx.params.get("modality") or modalities[0]
         default_name = _default_name(ctx, modality)
 
@@ -188,6 +228,7 @@ class BuildIndex(foo.Operator):
             view=types.DropdownView(),
         )
 
+        # only the settings that affect the chosen modality
         for name, (used_by, label, description, default) in _SETTINGS.items():
             if modality in used_by:
                 add = inputs.float if isinstance(default, float) else inputs.int
@@ -207,7 +248,15 @@ class BuildIndex(foo.Operator):
             inputs, view=types.View(label="Build cross-modal index")
         )
 
-    def execute(self, ctx):
+    def execute(
+        self, ctx: ExecutionContext
+    ) -> Generator[Any, None, None]:
+        """Embeds the samples, then creates the index.
+
+        Yields progress triggers while embedding (in the App), then the
+        result: ``brain_key``, ``indexed`` (vectors in the index) and
+        ``failed`` (samples whose media couldn't be embedded).
+        """
         view = _build_view(ctx)
         modality = ctx.params["modality"]
         field = ctx.params["embeddings_field"]
@@ -229,6 +278,8 @@ class BuildIndex(foo.Operator):
             overwrite=ctx.params.get("overwrite", False),
         ):
             label = "Embedded %d of %d samples" % (done, total)
+            # delegated runs report to the orchestrator; in the App, the
+            # progress bar is driven by a trigger
             if ctx.delegated:
                 ctx.set_progress(progress=done / total, label=label)
             else:
@@ -240,6 +291,7 @@ class BuildIndex(foo.Operator):
             view, field, brain_key, modality, dim=dim, settings=settings
         )
 
+        # so the sidebar shows the new embeddings field
         if not ctx.delegated:
             yield ctx.trigger("reload_dataset")
 
@@ -249,7 +301,8 @@ class BuildIndex(foo.Operator):
             "failed": failed,
         }
 
-    def resolve_output(self, ctx):
+    def resolve_output(self, ctx: ExecutionContext) -> types.Property:
+        """Shows the result of :meth:`execute`."""
         outputs = types.Object()
         outputs.str("brain_key", label="Index")
         outputs.int("indexed", label="Vectors indexed")
@@ -258,8 +311,13 @@ class BuildIndex(foo.Operator):
 
 
 class Search(foo.Operator):
+    """Searches EmbeddingGemma 2 LanceDB indexes with text or the selected
+    samples, and returns the results without changing the grid.
+    """
+
     @property
-    def config(self):
+    def config(self) -> foo.OperatorConfig:
+        """The operator's name and label in the operator browser."""
         return foo.OperatorConfig(
             name="search",
             label="Cross-modal: search",
@@ -272,7 +330,10 @@ class Search(foo.Operator):
             dynamic=True,
         )
 
-    def resolve_input(self, ctx):
+    def resolve_input(self, ctx: ExecutionContext) -> types.Property:
+        """Builds the form: query type (text, or the selected samples if
+        any), the query, the indexes to search and ``k``.
+        """
         inputs = types.Object()
         indexes = engine.list_indexes(ctx.dataset)
         if not indexes:
@@ -290,6 +351,7 @@ class Search(foo.Operator):
         )
         query_types = types.RadioGroup()
         query_types.add_choice("text", label="Text")
+        # offer the selection only if it can be embedded
         if selection and not selection["error"]:
             query_types.add_choice(
                 "samples", label="%d selected samples" % selection["count"]
@@ -336,7 +398,13 @@ class Search(foo.Operator):
 
         return types.Property(inputs, view=types.View(label="Cross-modal search"))
 
-    def execute(self, ctx):
+    def execute(self, ctx: ExecutionContext) -> dict[str, Any]:
+        """Runs the search.
+
+        Returns:
+            ``query`` (its description) and ``results``: an
+            :class:`engine.Section` per index searched
+        """
         query = _query_from_params(ctx)
         sections = engine.search(
             ctx.dataset,
@@ -346,14 +414,23 @@ class Search(foo.Operator):
         )
         return {"query": query.describe(), "results": sections}
 
-    def resolve_output(self, ctx):
+    def resolve_output(self, ctx: ExecutionContext) -> types.Property:
+        """Shows the result of :meth:`execute`."""
         outputs = types.Object()
         outputs.str("query", label="Query")
         outputs.list("results", types.Object(), label="Results per index")
         return types.Property(outputs, view=types.View(label="Search results"))
 
 
-def _query_from_params(ctx):
+def _query_from_params(ctx: ExecutionContext) -> engine.Query:
+    """Builds the :class:`Search` operator's query from its params.
+
+    ``sample_ids`` may be passed explicitly (e.g. from Python); otherwise the
+    App's current selection is used.
+
+    Raises:
+        ValueError: if the text is empty or no samples are given
+    """
     if ctx.params.get("query_type", "text") == "text":
         text = (ctx.params.get("text") or "").strip()
         if not text:
