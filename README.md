@@ -41,7 +41,7 @@ its sound.
 ## Install
 
 ```shell
-fiftyone plugins download https://github.com/harpreetsahota204/cross_modal_retrieval_plugin
+fiftyone plugins download https://github.com/harpreetsahota204/cross_modal_similarity_search
 fiftyone plugins requirements @harpreetsahota/cross-modal-retrieval --install
 ```
 
