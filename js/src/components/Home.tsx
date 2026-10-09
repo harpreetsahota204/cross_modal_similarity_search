@@ -20,7 +20,7 @@ import {
 } from "@voxel51/voodo";
 import React, { useMemo } from "react";
 import { MIDDLE_DOT, MODALITY_LABELS, formatQuery, formatTime } from "../format";
-import { HIGHLIGHT, PAGE, POINTER, TOOLTIP_TEXT } from "../styles";
+import { HIGHLIGHT, PAGE, POINTER, TOOLTIP_TEXT, modalityChip } from "../styles";
 import type { Applied, QueryMode, Run } from "../types";
 
 const QUERY_ICONS: Record<QueryMode, IconName> = {
@@ -158,14 +158,21 @@ export default function Home({
               found.length > 1 ? (
                 <Stack orientation={Orientation.Row} spacing={Spacing.Xs} style={{ flexWrap: "wrap" }}>
                   {found.map((s) => (
-                    <Button
+                    <Tooltip
                       key={s.key}
-                      size={Size.Xs}
-                      variant={isApplied && applied?.key === s.key ? Variant.Primary : Variant.Secondary}
-                      onClick={stop(() => onApply(run.run_id, s.key))}
+                      content={tip(
+                        `Filter to the ${s.count} ${MODALITY_LABELS[s.modality].toLowerCase()} results from ${s.key}`,
+                      )}
                     >
-                      {MODALITY_LABELS[s.modality]} {MIDDLE_DOT} {s.key} ({s.count})
-                    </Button>
+                      <Button
+                        size={Size.Xs}
+                        variant={Variant.Secondary}
+                        style={modalityChip(s.modality, isApplied && applied?.key === s.key)}
+                        onClick={stop(() => onApply(run.run_id, s.key))}
+                      >
+                        {MODALITY_LABELS[s.modality]} {MIDDLE_DOT} {s.key} ({s.count})
+                      </Button>
+                    </Tooltip>
                   ))}
                 </Stack>
               ) : undefined,
