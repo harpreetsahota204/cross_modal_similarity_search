@@ -45,16 +45,30 @@ fiftyone plugins download https://github.com/harpreetsahota204/cross_modal_simil
 fiftyone plugins requirements @harpreetsahota/cross-modal-retrieval --install
 ```
 
-Then register the model once:
+### Download the model
+
+The plugin needs EmbeddingGemma 2 in your FiftyOne Model Zoo before it can
+build an index or run a search. Register the model's remote source, then
+download the weights (about 1.5 GB). You only do this once per machine:
 
 ```python
 import fiftyone.zoo as foz
 
-foz.register_zoo_model_source("https://github.com/harpreetsahota204/EmbeddingGemma2")
+foz.register_zoo_model_source(
+    "https://github.com/harpreetsahota204/EmbeddingGemma2", overwrite=True
+)
+foz.download_zoo_model("google/embeddinggemma-2")
 ```
 
-The weights download the first time you build an index or search. The model
-runs on CPU, but embedding a video dataset is much faster on a GPU.
+The weights land in your model zoo directory (`~/fiftyone/__models__` by
+default), under `embeddinggemma2/embeddinggemma-2`.
+Running the download again only fetches files that are missing. The repo is
+public, so you don't need a Hugging Face login.
+
+If you skip the download, the panel fetches the weights the first time you
+build an index or search, and that first run stalls while 1.5 GB downloads.
+
+The model runs on CPU, but embedding a video dataset is much faster on a GPU.
 
 ## Quick start
 
