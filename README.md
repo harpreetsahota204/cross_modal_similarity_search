@@ -1,5 +1,37 @@
 # Cross-Modal Retrieval
 
+<div align="center">
+<p align="center">
+
+<!-- prettier-ignore -->
+<img src="https://user-images.githubusercontent.com/25985824/106288517-2422e000-6216-11eb-871d-26ad2e7b1e59.png" height="55px"> &nbsp;
+<img src="https://user-images.githubusercontent.com/25985824/106288518-24bb7680-6216-11eb-8f10-60052c519586.png" height="50px">
+
+**The open-source tool for building high-quality datasets and computer vision
+models**
+
+---
+
+<!-- prettier-ignore -->
+<a href="https://voxel51.com/fiftyone?utm_source=harpreet-gh">Website</a> •
+<a href="https://docs.voxel51.com?utm_source=harpreet-gh">Docs</a> •
+<a href="https://colab.research.google.com/github/voxel51/fiftyone-examples/blob/master/examples/quickstart.ipynb?utm_source=harpreet-gh">Try it Now</a> •
+<a href="https://docs.voxel51.com/getting_started_guides/index.html?utm_source=harpreet-gh">Getting Started Guides</a> •
+<a href="https://docs.voxel51.com/tutorials/index.html?utm_source=harpreet-gh">Tutorials</a> •
+<a href="https://voxel51.com/blog/?utm_source=harpreet-gh">Blog</a> •
+<a href="https://discord.gg/fiftyone-community?utm_source=harpreet-gh">Community</a>
+
+[![Discord](https://img.shields.io/badge/Discord-7289DA?logo=discord&logoColor=white)](https://discord.gg/fiftyone-community)
+[![Hugging Face](https://img.shields.io/badge/Hugging_Face-purple?style=flat&logo=huggingface)](https://huggingface.co/Voxel51)
+[![Voxel51 Blog](https://img.shields.io/badge/Voxel51_Blog-ff6d04?style=flat)](https://voxel51.com/blog)
+[![Newsletter](https://img.shields.io/badge/Newsletter-BE5B25?logo=mail.ru&logoColor=white)](https://share.hsforms.com/1zpJ60ggaQtOoVeBqIZdaaA2ykyk)
+[![LinkedIn](https://img.shields.io/badge/In-white?style=flat&label=Linked&labelColor=blue)](https://www.linkedin.com/company/voxel51)
+[![Twitter](https://img.shields.io/badge/Twitter-000000?logo=x&logoColor=white)](https://x.com/voxel51)
+[![Medium](https://img.shields.io/badge/Medium-12100E?logo=medium&logoColor=white)](https://medium.com/voxel51)
+
+</p>
+</div>
+
 Search the images, video and audio in a FiftyOne dataset with a sentence, with
 other samples, with a file, or with your own webcam and microphone. Type "a dog
 barking" and get the clips that sound like it. Record yourself clapping and
@@ -46,6 +78,11 @@ An index is the set of vectors your queries are compared to. Build your first
 one with **Build Cross-Modal Index**; add more later from the gear button with
 **+ Similarity Index**. When you build one, you choose which part of each
 sample becomes its vector:
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="figures/02_index_modalities_dark.png">
+  <img alt="One clip, three indexes: video embeds the frames, audio the soundtrack, video + audio both as one vector" src="figures/02_index_modalities.png">
+</picture>
 
 | Embed the samples as | What goes into the vector | Finds samples by |
 |---|---|---|
@@ -115,6 +152,11 @@ video and audio into vectors in **one shared 768-dimensional space**. In that
 space, the vector for the words "a dog barking", the vector for a photo of a
 barking dog, and the vector for the sound of a bark all land near each other.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="figures/01_shared_space_dark.png">
+  <img alt="EmbeddingGemma 2 maps text, images, video and audio into one shared space where matching meanings sit together" src="figures/01_shared_space.png">
+</picture>
+
 That shared space is what makes cross-modal search possible. Any vector can be
 compared to any other, so a text query can search audio, and the sound of one
 clip can search the frames of every other clip.
@@ -156,6 +198,12 @@ FiftyOne Brain has LanceDB as a built-in
 index this panel builds is an ordinary FiftyOne similarity index made with
 `fob.compute_similarity(..., backend="lancedb")`. So beyond this panel:
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="figures/04_lancedb_fiftyone_dark.png">
+  <img alt="The dataset keeps the vectors, a brain run records the index, LanceDB holds one table per index, and the panel, the App and Python all search it" src="figures/04_lancedb_fiftyone.png">
+</picture>
+
+
 - The App's own similarity search and `view.sort_by_similarity()` work on
   these indexes
 - Indexes you make in Python with this model show up in the panel too (see
@@ -164,6 +212,11 @@ index this panel builds is an ordinary FiftyOne similarity index made with
   table can be rebuilt without re-embedding anything
 
 ### What happens when you search
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="figures/03_search_pipeline_dark.png">
+  <img alt="Embed the query, fit it to each index, search each LanceDB table by cosine similarity, load the results into the grid" src="figures/03_search_pipeline.png">
+</picture>
 
 1. **Your query becomes a vector.** Text is embedded with the retrieval
    prompt. Selected samples reuse the vectors already stored on them when an
@@ -181,10 +234,42 @@ index this panel builds is an ordinary FiftyOne similarity index made with
    unrelated
 4. **The top matches open in the grid**, ordered from most to least similar
 
-Similarity scores are best read as a ranking, not an absolute measure. A text
-query usually scores lower against video than a video clip does against
-other video, even when the matches are excellent, because text and video
-vectors sit a little apart in the shared space.
+## How well it works
+
+These numbers come from a 100-clip sample of
+[VGGSound](https://www.robots.ox.ac.uk/~vgg/data/vggsound/) with 62 sound
+classes. Each class name was used as a text query against the three indexes:
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="figures/05_retrieval_quality_dark.png">
+  <img alt="Text search hit rates per index, and the score distributions of matching vs other clips" src="figures/05_retrieval_quality.png">
+</picture>
+
+- **Video + audio is the best all-rounder.** It puts a clip of the right
+  class first for 61% of queries, against 48% for video and 27% for audio.
+  Random ranking would manage about 2%
+- **Frames carry a lot.** VGGSound labels are sounds, yet the video index
+  finds a clip of the class in its top 5 for 90% of queries
+- **Read scores as a ranking.** Text-to-clip scores sit in a narrow band
+  (roughly 0.5 to 0.8), and matches score only about 0.1 higher than other
+  clips. Compare scores within one search, not across searches
+
+Different indexes rank the same clips by different evidence:
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="figures/06_example_search_dark.png">
+  <img alt="The query “church bell ringing” against the video, audio and video + audio indexes" src="figures/06_example_search.png">
+</picture>
+
+And because everything shares one space, a clip's *sound* can search other
+clips' *pictures*:
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="figures/07_sound_to_frames_dark.png">
+  <img alt="A clip's audio vector searching the frames-only video index finds other clips of the same class" src="figures/07_sound_to_frames.png">
+</picture>
+
+The figures are made by `figures/make_figures.py`.
 
 ## Indexes made in Python
 

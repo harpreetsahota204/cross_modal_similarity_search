@@ -4,3 +4,4 @@ js/node_modules/
 js/dist/*.map
 tests/
 js/src/__tests__/
+figures/.figure_data.npz
