@@ -1,0 +1,36 @@
+{
+    "name": "@harpreetsahota/cross-modal-retrieval",
+    "version": "0.1.0",
+    "description": "Cross-Modal Retrieval panel UI for FiftyOne",
+    "type": "module",
+    "main": "src/index.tsx",
+    "fiftyone": {
+        "script": "dist/index.umd.js"
+    },
+    "scripts": {
+        "build": "vite build",
+        "test": "vitest run",
+        "typecheck": "tsc --noEmit"
+    },
+    "author": "Harpreet Sahota",
+    "license": "Apache 2.0",
+    "dependencies": {
+        "@voxel51/voodo": "2.1.0",
+        "react": "^18.2.0",
+        "react-dom": "^18.2.0",
+        "react-is": "^18.3.1"
+    },
+    "devDependencies": {
+        "@rollup/plugin-node-resolve": "^15.3.0",
+        "@types/node": "^22.7.6",
+        "@types/react": "^18.3.12",
+        "@types/react-dom": "^18.3.1",
+        "@types/react-is": "^18",
+        "@vitejs/plugin-react": "^4.3.2",
+        "@voxel51/fiftyone-js-plugin-build": "^2.0.0",
+        "typescript": "^5.6.3",
+        "vite": "^5.4.9",
+        "vite-plugin-externalize-deps": "^0.8.0",
+        "vitest": "^2.1.8"
+    }
+}

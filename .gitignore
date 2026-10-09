@@ -1,0 +1,4 @@
+__pycache__/
+*.pyc
+js/node_modules/
+js/dist/*.map

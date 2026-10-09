@@ -1,0 +1,5 @@
+lancedb
+transformers>=5.18
+torch
+av
+huggingface-hub

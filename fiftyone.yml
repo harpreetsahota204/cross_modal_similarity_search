@@ -1,0 +1,18 @@
+name: "@harpreetsahota/cross-modal-retrieval"
+type: plugin
+author: Harpreet Sahota
+version: 0.1.0
+license: Apache 2.0
+url: https://github.com/harpreetsahota204/cross_modal_retrieval_plugin
+description: >-
+  Search images, video and audio with text, a selected sample or a file.
+  EmbeddingGemma 2 puts every modality in one embedding space, and every
+  index is a LanceDB similarity index
+fiftyone:
+  version: ">=1.22.0"
+js_bundle: js/dist/index.umd.js
+operators:
+  - build_index
+  - search
+panels:
+  - cross_modal_retrieval
