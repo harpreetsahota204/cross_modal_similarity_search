@@ -24,10 +24,23 @@ _FIELD_SUFFIXES = {
     "video+audio": "av",
 }
 
-_SETTING_INPUTS = {
-    "fps": ("Frames per second", "Video frames sampled per second", 1.0),
-    "max_frames": ("Max frames", "Frames per video, spread over its length", 32),
+# Model settings the build operator exposes:
+# name -> (modalities they apply to, label, description, default)
+_SETTINGS = {
+    "fps": (
+        ("video", "video+audio"),
+        "Frames per second",
+        "Video frames sampled per second",
+        1.0,
+    ),
+    "max_frames": (
+        ("video", "video+audio"),
+        "Max frames",
+        "Frames per video, spread over its length",
+        32,
+    ),
     "max_audio_seconds": (
+        ("audio", "video+audio"),
         "Max audio seconds",
         "Audio longer than this is truncated",
         30.0,
@@ -175,9 +188,8 @@ class BuildIndex(foo.Operator):
             view=types.DropdownView(),
         )
 
-        for name, modalities_using in engine.BUILD_SETTINGS.items():
-            if modality in modalities_using:
-                label, description, default = _SETTING_INPUTS[name]
+        for name, (used_by, label, description, default) in _SETTINGS.items():
+            if modality in used_by:
                 add = inputs.float if isinstance(default, float) else inputs.int
                 add(name, default=default, label=label, description=description)
 
@@ -203,7 +215,7 @@ class BuildIndex(foo.Operator):
         dim = int(ctx.params.get("embedding_dim", engine.MAX_DIM))
         settings = {
             name: ctx.params[name]
-            for name, used_by in engine.BUILD_SETTINGS.items()
+            for name, (used_by, *_) in _SETTINGS.items()
             if modality in used_by and ctx.params.get(name) is not None
         }
 

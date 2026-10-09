@@ -1,4 +1,6 @@
-import type { MediaKind, Modality } from "./types";
+import type { MediaKind, Modality, Run } from "./types";
+
+export const MIDDLE_DOT = "\u00B7";
 
 export const MODALITY_LABELS: Record<Modality, string> = {
   image: "Image",
@@ -6,18 +8,6 @@ export const MODALITY_LABELS: Record<Modality, string> = {
   audio: "Audio",
   "video+audio": "Video + audio",
 };
-
-/** VOODO theme variables, so accents follow the App's light/dark mode. */
-export const MODALITY_COLORS: Record<Modality, string> = {
-  image: "var(--color-content-icon-info)",
-  video: "var(--color-brand-accent)",
-  audio: "var(--color-content-icon-success)",
-  "video+audio": "var(--color-content-icon-warning)",
-};
-
-export const BORDER = "var(--color-content-border-default)";
-export const CARD = "var(--color-content-bg-card)";
-export const MUTED_BG = "var(--color-content-bg-muted)";
 
 /** What each kind of media can be embedded as; mirrors the Python engine. */
 export const QUERY_MODALITIES: Record<Exclude<MediaKind, null>, Modality[]> = {
@@ -29,7 +19,7 @@ export const QUERY_MODALITIES: Record<Exclude<MediaKind, null>, Modality[]> = {
 
 const AUDIO_EXTENSIONS = [
   ".aac", ".aif", ".aiff", ".flac", ".m4a", ".mp3", ".oga", ".ogg", ".opus",
-  ".wav", ".wma",
+  ".wav", ".weba", ".wma",
 ];
 const VIDEO_EXTENSIONS = [".avi", ".m4v", ".mkv", ".mov", ".mp4", ".mpeg", ".mpg", ".webm"];
 const IMAGE_EXTENSIONS = [".bmp", ".gif", ".jpeg", ".jpg", ".png", ".tif", ".tiff", ".webp"];
@@ -44,18 +34,24 @@ export function mediaKindOf(name: string): MediaKind {
   return null;
 }
 
-export function basename(path: string): string {
-  return path.split(/[\\/]/).pop() ?? path;
+/** One line saying what a search was asked with. */
+export function formatQuery(run: Run): string {
+  if (run.query_type === "text") return `"${run.query ?? ""}"`;
+  if (run.query_label) return run.query_label;
+  if (Array.isArray(run.query)) {
+    return `${run.query.length} selected ${run.query.length === 1 ? "sample" : "samples"}`;
+  }
+  return run.query ?? "";
 }
 
-/** Cosine similarity as a 0-1 bar width; EG2 scores rarely leave 0.4-1. */
-export function scoreFraction(score: number): number {
-  return Math.max(0, Math.min(1, (score - 0.4) / 0.6));
-}
-
-/** The modality to query a hit with when pivoting from it. */
-export function pivotModality(kind: MediaKind, sectionModality: Modality): Modality | null {
-  if (!kind) return null;
-  const options = QUERY_MODALITIES[kind];
-  return options.includes(sectionModality) ? sectionModality : options[0];
+/** "just now", "5 min ago", "3 h ago", then the date. */
+export function formatTime(iso: string, now: number = Date.now()): string {
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return "";
+  const minutes = Math.floor((now - then) / 60_000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} h ago`;
+  return new Date(iso).toLocaleDateString();
 }

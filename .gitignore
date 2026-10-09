@@ -2,3 +2,5 @@ __pycache__/
 *.pyc
 js/node_modules/
 js/dist/*.map
+tests/
+js/src/__tests__/

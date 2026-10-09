@@ -33,8 +33,10 @@ wants a GPU.
 
 ## Use it
 
-1. Open the **Cross-Modal Retrieval** panel from the `+` next to the grid's tab
-2. Click **Build an index** and choose what to embed the samples as:
+The panel is laid out like FiftyOne's Similarity Search panel.
+
+1. Open the **Cross-Modal Search** panel from the `+` next to the grid's tab
+2. Click **Build Cross-Modal Index** and choose what to embed the samples as:
 
    | Modality | Embeds | Good for |
    |---|---|---|
@@ -44,19 +46,22 @@ wants a GPU.
    | Video + audio | frames and soundtrack as one vector | both at once |
 
    A video dataset can have all three video indexes side by side
-3. Search with one of the three query tabs:
+3. Click **New Search**, pick one or more indexes, and search by:
    - **Text**: a description. Each index embeds it with the retrieval prompt
-   - **Selection**: the samples selected in the grid, as any modality their
+   - **Samples**: the samples selected in the grid, as any modality their
      media supports. Several samples are averaged into one query
-   - **File**: an image, video or audio file that isn't in the dataset
+   - **Media**: upload an image, video, audio or MCAP file, record a clip from
+     your webcam or microphone, or take a photo. Nothing is added to the
+     dataset. The webcam and microphone need the App on `localhost` or https
 
-Results come back as one row per index, with players for the media. From a
-result you can:
+   Media is embedded with the same settings as each index's samples, so a
+   query and the dataset go through the same preprocessing
 
-- **Open** it in the sample modal
-- **Similar**: search every index again with that sample
-- **Show in grid**: show that index's results in the grid, in rank order.
-  **Restore grid** puts back the view you had
+The results open in the grid in rank order, and the search is saved to the
+panel's list. Click a saved search to show its results again; a search of
+several indexes has a button per index. Searches can be cloned or deleted,
+and the gear button lists the indexes, with **Rebuild table** for an index
+whose LanceDB table is missing.
 
 ## Indexes made in Python
 
@@ -108,8 +113,6 @@ recreates it from the field.
 
 ```shell
 cd js && npm install && npm run build   # panel bundle -> js/dist/index.umd.js
-npm test                                # format helpers
-
-# engine tests, on a clone of a VGGSound dataset named cmr-vggsound
-PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest tests -q
 ```
+
+Commit the rebuilt `js/dist/index.umd.js`; the App loads it as is.

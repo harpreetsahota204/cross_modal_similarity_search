@@ -16,11 +16,8 @@ export type IndexInfo = {
 };
 
 export type Status = {
-  dataset: string;
   uri: string;
   indexes: IndexInfo[];
-  label_fields: string[];
-  default_label_field: string | null;
 };
 
 export type Selection = {
@@ -33,52 +30,66 @@ export type Selection = {
   error: string | null;
 };
 
-export type Hit = {
-  id: string;
-  score: number;
-  filepath: string;
-  media: MediaKind;
-  label: string | null;
-  group_id?: string;
-  slice?: string;
-};
-
-export type Section = {
+export type QueryMode = "text" | "samples" | "file";
+export type RunSection = {
   key: string;
   modality: Modality;
-  hits: Hit[];
+  count: number;
+  top_score: number | null;
   error: string | null;
 };
 
-export type Results = {
-  query: string;
-  sections: Section[];
+/** A saved search. ``query`` is the text, the sample IDs or the filename. */
+export type Run = {
+  run_id: string;
+  run_name: string;
+  query_type: QueryMode;
+  query: string | string[] | null;
+  query_label: string | null;
+  modality: Modality | null;
+  brain_keys: string[];
+  k: number;
+  status: "completed" | "failed";
+  error: string | null;
+  sections: RunSection[];
+  result_count: number;
+  creation_time: string;
 };
+
+export type Applied = { run_id: string; key: string };
 
 export type PanelData = {
   status?: Status;
+  runs?: Run[];
   selection?: Selection | null;
-  results?: Results | null;
-  error?: string | null;
   model_loaded?: boolean;
-  grid?: { key: string; count?: number } | null;
+  applied?: Applied | null;
 };
 
 /** Python panel methods, as event names the App can trigger. */
 export type PanelMethods = {
   refresh: string;
   search: string;
-  show_in_grid: string;
-  clear_grid: string;
-  open_sample: string;
+  apply_run: string;
+  delete_run: string;
+  clear_view: string;
   build_index: string;
   rebuild_table: string;
 };
-
-export type QueryMode = "text" | "samples" | "file";
 
 export type UploadedQuery = {
   name: string;
   data: string;
   kind: MediaKind;
 };
+
+/** What the New Search form starts from when cloning a search. */
+export type FormSeed = {
+  mode: QueryMode;
+  text: string;
+  modality: Modality | null;
+  brainKeys: string[];
+  k: number;
+};
+
+export type Page = "home" | "new_search" | "indexes";

@@ -37,8 +37,15 @@ MAX_K = 100
 
 AUDIO_EXTENSIONS = {
     ".aac", ".aif", ".aiff", ".flac", ".m4a", ".mp3", ".oga", ".ogg",
-    ".opus", ".wav", ".wma",
+    ".opus", ".wav", ".weba", ".wma",
 }  # fmt: skip
+
+# Browser recordings (MediaRecorder) are written as a stream, without the
+# duration that frame sampling needs, so they are remuxed into these
+# containers, which the model's decoder also accepts
+RECORDING_EXTENSIONS = {".webm": ".webm", ".weba": ".ogg"}
+
+_CONTAINER_FORMATS = {".webm": "webm", ".ogg": "ogg"}
 
 # What each kind of media can be embedded as
 QUERY_MODALITIES = {
@@ -46,13 +53,6 @@ QUERY_MODALITIES = {
     "video": ("video", "audio", "video+audio"),
     "audio": ("audio",),
     "mcap": ("video", "audio", "video+audio"),
-}
-
-# Model settings the build operator exposes, and where they apply
-BUILD_SETTINGS = {
-    "fps": ("video", "video+audio"),
-    "max_frames": ("video", "video+audio"),
-    "max_audio_seconds": ("audio", "video+audio"),
 }
 
 _LANCE_METRICS = {"cosine": "cosine", "euclidean": "l2"}
@@ -183,6 +183,25 @@ def media_kind(filepath):
 ###############################################################################
 
 
+# Model settings an index can be built with, and the modalities they change
+SETTINGS_MODALITIES = {
+    "fps": ("video", "video+audio"),
+    "max_frames": ("video", "video+audio"),
+    "max_audio_seconds": ("audio", "video+audio"),
+}
+
+
+def query_settings(index, modality):
+    """The settings of an index that apply to embedding a query as the given
+    modality, so the query is decoded the way the index's samples were.
+    """
+    return {
+        k: v
+        for k, v in (index.get("settings") or {}).items()
+        if modality in SETTINGS_MODALITIES[k]
+    }
+
+
 def index_modality(model_kwargs):
     """The modality an index's vectors came from, per its ``model_kwargs``."""
     media_type = model_kwargs.get("media_type", "image")
@@ -235,6 +254,9 @@ def list_indexes(dataset):
                 "field": config.embeddings_field,
                 "dim": kwargs.get("embedding_dim", MAX_DIM),
                 "prompt_name": kwargs.get("prompt_name", DEFAULT_PROMPT),
+                "settings": {
+                    k: kwargs[k] for k in SETTINGS_MODALITIES if k in kwargs
+                },
             }
         )
 
@@ -283,29 +305,27 @@ def rebuild_table(dataset, brain_key):
     Returns:
         the number of vectors written
     """
-    index = _get_index(dataset, brain_key)
+    field = next(
+        (i["field"] for i in list_indexes(dataset) if i["key"] == brain_key),
+        None,
+    )
+    if field is None:
+        raise ValueError(
+            "'%s' is not an EmbeddingGemma 2 LanceDB index on this dataset"
+            % brain_key
+        )
+
     results = load_index(dataset, brain_key)
     if results.table is not None:
         results.cleanup()
 
-    view = dataset.load_brain_view(brain_key).exists(index["field"])
-    ids, vectors = view.values(["id", index["field"]])
+    view = dataset.load_brain_view(brain_key).exists(field)
+    ids, vectors = view.values(["id", field])
     if not ids:
-        raise ValueError("Field '%s' has no embeddings" % index["field"])
+        raise ValueError("Field '%s' has no embeddings" % field)
 
     results.add_to_index(np.stack(vectors), np.array(ids))
     return len(ids)
-
-
-def _get_index(dataset, brain_key):
-    for index in list_indexes(dataset):
-        if index["key"] == brain_key:
-            return index
-
-    raise ValueError(
-        "'%s' is not an EmbeddingGemma 2 LanceDB index on this dataset"
-        % brain_key
-    )
 
 
 ###############################################################################
@@ -371,6 +391,52 @@ class VectorQuery(object):
         return ()
 
 
+class MediaQuery(object):
+    """A query by media files, embedded once per distinct set of model
+    settings among the target indexes, since an index built with e.g.
+    ``fps=2`` must be queried with frames sampled at 2 fps.
+
+    Embeds eagerly, so the files only need to exist while this is built.
+
+    Args:
+        paths: the media filepaths, averaged into one query
+        modality: the modality to embed them as
+        label: what the query represents, for messages
+        indexes: the indexes the query will search
+    """
+
+    def __init__(self, paths, modality, label, indexes):
+        self.label = label
+        self._modality = modality
+        self._vectors = {}
+        for index in indexes or [{}]:
+            settings = query_settings(index, modality)
+            key = _settings_key(settings)
+            if key not in self._vectors:
+                self._vectors[key] = _mean(
+                    [embed_file(p, modality, settings=settings) for p in paths]
+                )
+
+    def describe(self):
+        return self.label
+
+    def vector_for(self, index):
+        key = _settings_key(query_settings(index, self._modality))
+        if key not in self._vectors:
+            raise ValueError(
+                "The query wasn't embedded for index '%s'" % index["key"]
+            )
+
+        return fit_dim(self._vectors[key], index["dim"])
+
+    def excludes(self, index):
+        return ()
+
+
+def _settings_key(settings):
+    return tuple(sorted(settings.items()))
+
+
 def _mean(vectors):
     return fit_dim(np.mean(np.stack(vectors), axis=0), len(vectors[0]))
 
@@ -384,18 +450,21 @@ def describe_selection(dataset, sample_ids, indexes):
 
     samples = flat(dataset).select(sample_ids)
     kinds = {media_kind(p) for p in samples.values("filepath")}
-    kind = kinds.pop() if len(kinds) == 1 else None
+    kind = next(iter(kinds)) if len(kinds) == 1 else None
     modalities = list(QUERY_MODALITIES.get(kind, ()))
 
     stored = {}
     for index in indexes:
         m = index["modality"]
-        if m in modalities and m not in stored:
-            if samples.exists(index["field"]).count() == len(sample_ids):
-                stored[m] = index["key"]
+        if (
+            m in modalities
+            and m not in stored
+            and samples.exists(index["field"]).count() == len(sample_ids)
+        ):
+            stored[m] = index["key"]
 
     error = None
-    if len(sample_ids) > 1 and kind is None:
+    if len(kinds) > 1:
         error = "The selection mixes media types; select one kind"
     elif kind is None:
         error = "This sample's media can't be embedded"
@@ -422,31 +491,58 @@ def sample_query(dataset, sample_ids, modality, indexes):
     else:
         noun = os.path.basename(samples.first().filepath)
 
+    label = "%s of %s" % (modality, noun)
+
     for index in indexes:
         if index["modality"] != modality:
             continue
 
         field = index["field"]
         if samples.exists(field).count() == len(sample_ids):
-            vectors = samples.values(field)
             return VectorQuery(
-                _mean(vectors),
-                "%s of %s" % (modality, noun),
+                _mean(samples.values(field)),
+                label,
                 source_field=field,
                 exclude_ids=sample_ids,
             )
 
-    vectors = [embed_file(p, modality) for p in samples.values("filepath")]
-    return VectorQuery(
-        _mean(vectors), "%s of %s" % (modality, noun), exclude_ids=sample_ids
-    )
+    return MediaQuery(samples.values("filepath"), modality, label, indexes)
 
 
-def file_query(path, modality, name=None):
-    """Builds a query from a media file that is not in the dataset."""
-    return VectorQuery(
-        embed_file(path, modality),
+def remux_recording(src, dst):
+    """Copies the audio and video packets of a browser recording into a new
+    WebM or Ogg file (per ``dst``'s extension), which records the duration
+    and seek index the recording lacks. Nothing is re-encoded.
+    """
+    import av
+
+    fmt = _CONTAINER_FORMATS[os.path.splitext(dst)[1].lower()]
+    with av.open(src) as inp, av.open(dst, "w", format=fmt) as out:
+        streams = {
+            s.index: out.add_stream_from_template(s)
+            for s in inp.streams
+            if s.type in ("video", "audio")
+        }
+        if not streams:
+            raise ValueError("The recording has no audio or video")
+
+        for packet in inp.demux(*[inp.streams[i] for i in streams]):
+            if packet.dts is None:
+                continue
+
+            packet.stream = streams[packet.stream.index]
+            out.mux(packet)
+
+
+def file_query(path, modality, indexes, name=None):
+    """Builds a query from a media file that is not in the dataset, embedded
+    with the settings of each of the given indexes.
+    """
+    return MediaQuery(
+        [path],
+        modality,
         "%s of %s" % (modality, name or os.path.basename(path)),
+        indexes,
     )
 
 
@@ -540,7 +636,7 @@ def describe_hits(dataset, index, hits, label_field=None):
     if dataset.media_type == "group":
         paths += ["%s.id" % dataset.group_field, "%s.name" % dataset.group_field]
 
-    rows = {v[0]: v for v in zip(*samples.values(paths))}
+    rows = {v[0]: v for v in zip(*samples.values(paths), strict=True)}
 
     out = []
     for sample_id, score in hits:
@@ -569,14 +665,15 @@ def search(dataset, query, brain_keys=None, k=12, label_field=None):
 
     Args:
         dataset: a :class:`fiftyone.core.dataset.Dataset`
-        query: a :class:`TextQuery` or :class:`VectorQuery`
+        query: a :class:`TextQuery`, :class:`VectorQuery` or
+            :class:`MediaQuery`
         brain_keys (None): the indexes to search. By default, all of them
         k (12): results per index, at most :data:`MAX_K`
         label_field (None): a field to caption the results with
 
     Returns:
         a list with a dict per index: ``key``, ``modality``, ``hits``, and
-        ``error`` if that index failed
+        ``error`` (None unless that index failed)
     """
     k = max(1, min(int(k), MAX_K))
     indexes = list_indexes(dataset)
@@ -650,7 +747,9 @@ def embed_samples(
     failed = 0
     for start in range(0, total, batch_size):
         batch = zip(
-            ids[start : start + batch_size], paths[start : start + batch_size]
+            ids[start : start + batch_size],
+            paths[start : start + batch_size],
+            strict=True,
         )
         values = {}
         for sample_id, path in batch:

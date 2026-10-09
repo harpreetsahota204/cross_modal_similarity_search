@@ -28,3 +28,17 @@ export function usePersistentState<T>(
 
   return [value, set];
 }
+
+/** Forgets this panel's persistent state under a key prefix, so the next
+ * mount starts from its initial values. */
+export function useForgetPersistentState() {
+  const panelId = usePanelId();
+  return useCallback(
+    (prefix: string) => {
+      for (const id of Array.from(store.keys())) {
+        if (id.startsWith(`${panelId}:${prefix}`)) store.delete(id);
+      }
+    },
+    [panelId],
+  );
+}
