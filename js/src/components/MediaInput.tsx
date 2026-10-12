@@ -357,7 +357,9 @@ export default function MediaInput({ value, onChange }: Props) {
         {value.kind === "image" ? (
           <img src={value.data} alt={value.name} style={FILL} />
         ) : value.kind === "video" ? (
-          <video src={value.data} controls preload="metadata" style={FILL} />
+          // the key keeps React from reusing the live camera's <video>, whose
+          // srcObject (the stopped stream) would override src and play black
+          <video key="playback" src={value.data} controls preload="metadata" style={FILL} />
         ) : value.kind === "audio" ? (
           <audio src={value.data} controls preload="metadata" style={{ width: "90%" }} />
         ) : (
@@ -394,7 +396,7 @@ export default function MediaInput({ value, onChange }: Props) {
     stage = (
       <>
         {source === "webcam" ? (
-          <video ref={videoRef} autoPlay muted playsInline style={{ ...FILL, transform: "scaleX(-1)" }} />
+          <video key="live" ref={videoRef} autoPlay muted playsInline style={{ ...FILL, transform: "scaleX(-1)" }} />
         ) : stream ? (
           <Waveform stream={stream} />
         ) : null}

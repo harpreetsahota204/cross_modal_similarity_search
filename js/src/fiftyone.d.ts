@@ -32,7 +32,3 @@ declare module "@fiftyone/operators" {
 declare module "@fiftyone/spaces" {
   export function usePanelId(): string;
 }
-
-declare module "@fiftyone/state" {
-  export function getSampleSrc(url: string): string;
-}

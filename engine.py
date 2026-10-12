@@ -121,7 +121,9 @@ class IndexInfo(TypedDict):
 
 
 class Hit(TypedDict, total=False):
-    """One search result, as sent to the panel. Built by :func:`describe_hits`."""
+    """One search result, as :func:`search` returns it. Built by
+    :func:`describe_hits`.
+    """
 
     id: str
     score: float  # cosine similarity, -1 to 1, higher is closer
@@ -506,13 +508,27 @@ def describe_index(dataset: Any, index: IndexInfo) -> dict[str, Any]:
         logger.warning("Failed to load index '%s': %s", index["key"], e)
         info.update(table=None, count=0, ok=False, error=str(e))
 
-    info["slices"] = None
-    if dataset.media_type == "group":
-        info["slices"] = dataset.load_brain_view(index["key"]).distinct(
-            "%s.name" % dataset.group_field
-        )
-
+    info["slices"] = index_slices(dataset, index["key"])
     return info
+
+
+def index_slices(dataset: Any, brain_key: str) -> Optional[list[str]]:
+    """The group slices an index covers.
+
+    Args:
+        dataset: a :class:`fiftyone.core.dataset.Dataset`
+        brain_key: the index's brain key
+
+    Returns:
+        the slice names, or None if the dataset isn't grouped
+    """
+    if dataset.media_type != "group":
+        return None
+
+    # the brain view holds exactly the samples the index was built from
+    return dataset.load_brain_view(brain_key).distinct(
+        "%s.name" % dataset.group_field
+    )
 
 
 def rebuild_table(dataset: Any, brain_key: str) -> int:
@@ -971,27 +987,6 @@ _LABEL_PATHS = {
     fol.Classifications: ".classifications.label",
     fol.Detections: ".detections.label",
 }
-
-
-def label_fields(dataset: Any) -> list[str]:
-    """Top-level fields whose values make a good caption for a result.
-
-    Args:
-        dataset: a :class:`fiftyone.core.dataset.Dataset`
-
-    Returns:
-        the names of label fields of a supported type, and string fields
-    """
-    names = []
-    schema = flat(dataset).get_field_schema()
-    for name, field in schema.items():
-        if isinstance(field, fof.EmbeddedDocumentField):
-            if field.document_type in _LABEL_PATHS:
-                names.append(name)
-        elif isinstance(field, fof.StringField) and name != "filepath":
-            names.append(name)
-
-    return names
 
 
 def _label_path(dataset: Any, label_field: str) -> str:

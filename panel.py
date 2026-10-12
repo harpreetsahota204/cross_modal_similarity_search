@@ -511,11 +511,7 @@ def _results_view(
     # _allow_mixed lets slices of different media types share it
     slices: set[str] = set()
     for section in sections:
-        slices.update(
-            dataset.load_brain_view(section["key"]).distinct(
-                "%s.name" % dataset.group_field
-            )
-        )
+        slices.update(engine.index_slices(dataset, section["key"]) or [])
     return dataset.select_group_slices(
         sorted(slices), _allow_mixed=True
     ).select(ids, ordered=True)
