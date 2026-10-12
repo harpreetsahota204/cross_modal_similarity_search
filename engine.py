@@ -59,8 +59,14 @@ MAX_DIM = 768
 # The model's prompt for search queries; it's prepended to query text
 DEFAULT_PROMPT = "SearchQuery"
 
-# Upper bound on results per index, so one request can't load the whole table
-MAX_K = 100
+# Searches return every sample whose cosine similarity meets this. Top
+# cross-modal matches on VGGSound score about 0.6-0.9, so 0.65 keeps the
+# close ones without flooding the grid
+DEFAULT_THRESHOLD = 0.65
+
+# Upper bound on results per index, so a low threshold can't load the whole
+# table into the grid
+MAX_RESULTS = 500
 
 # Recognized by extension first, because FiftyOne's mime-type lookup doesn't
 # classify some of these (e.g. .weba, .opus) as media
@@ -916,18 +922,19 @@ def _score(distance: float, metric: str) -> float:
 
 
 def search_index(
-    dataset: Any, index: IndexInfo, query: Query, k: int
+    dataset: Any, index: IndexInfo, query: Query, threshold: float
 ) -> list[tuple[str, float]]:
-    """Searches one index.
+    """Searches one index for every sample similar enough to the query.
 
     Args:
         dataset: a :class:`fiftyone.core.dataset.Dataset`
         index: the :class:`IndexInfo` to search
         query: a :class:`Query`
-        k: the number of results
+        threshold: the minimum cosine similarity a result needs, -1 to 1
 
     Returns:
-        up to ``k`` ``(sample_id, score)`` tuples, best first
+        up to :data:`MAX_RESULTS` ``(sample_id, score)`` tuples with
+        ``score >= threshold``, best first
 
     Raises:
         ValueError: if the index's LanceDB table is missing
@@ -941,18 +948,21 @@ def search_index(
     rows = (
         results.table.search(query.vector_for(index))
         .distance_type(_LANCE_METRICS[metric])
-        # over-fetch so k remain after the excluded samples are dropped
-        .limit(k + len(exclude))
+        # over-fetch so the cap still holds after the excluded samples are
+        # dropped
+        .limit(MAX_RESULTS + len(exclude))
         .select(["id"])
         .to_list()
     )
 
+    # rows are nearest first, so the threshold just trims the tail
     hits = [
-        (r["id"], _score(r["_distance"], metric))
+        (r["id"], score)
         for r in rows
         if r["id"] not in exclude
+        and (score := _score(r["_distance"], metric)) >= threshold
     ]
-    return hits[:k]
+    return hits[:MAX_RESULTS]
 
 
 # label type -> path to its label strings, relative to the field
@@ -1071,7 +1081,7 @@ def search(
     dataset: Any,
     query: Query,
     brain_keys: Optional[Sequence[str]] = None,
-    k: int = 12,
+    threshold: float = DEFAULT_THRESHOLD,
     label_field: Optional[str] = None,
 ) -> list[Section]:
     """Runs a query against EmbeddingGemma 2 LanceDB indexes.
@@ -1084,13 +1094,14 @@ def search(
         query: a :class:`TextQuery`, :class:`VectorQuery` or
             :class:`MediaQuery`
         brain_keys (None): the indexes to search. By default, all of them
-        k (12): results per index, at most :data:`MAX_K`
+        threshold (DEFAULT_THRESHOLD): the minimum cosine similarity a
+            result needs; each index returns at most :data:`MAX_RESULTS`
         label_field (None): a field to caption the results with
 
     Returns:
         a :class:`Section` per index searched
     """
-    k = max(1, min(int(k), MAX_K))
+    threshold = float(threshold)
     indexes = list_indexes(dataset)
     if brain_keys is not None:
         indexes = [i for i in indexes if i["key"] in brain_keys]
@@ -1104,7 +1115,7 @@ def search(
             "error": None,
         }
         try:
-            hits = search_index(dataset, index, query, k)
+            hits = search_index(dataset, index, query, threshold)
             section["hits"] = describe_hits(dataset, index, hits, label_field)
         except Exception as e:
             logger.warning("Search of '%s' failed: %s", index["key"], e)

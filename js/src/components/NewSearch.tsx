@@ -6,11 +6,11 @@ import {
   HeadingLevel,
   IconName,
   Input,
-  InputType,
   Justify,
   Orientation,
   RadioGroup,
   Select,
+  SingleValueSlider,
   Size,
   Spacing,
   Spinner,
@@ -22,13 +22,11 @@ import {
   Variant,
 } from "@voxel51/voodo";
 import React, { useState } from "react";
-import { MIDDLE_DOT, MODALITY_LABELS, QUERY_MODALITIES } from "../format";
+import { DEFAULT_THRESHOLD, MAX_RESULTS, MIDDLE_DOT, MODALITY_LABELS, QUERY_MODALITIES } from "../format";
 import { usePersistentState } from "../hooks/usePersistentState";
 import { ACTIVE_BOX, INFO_CARD, PAGE } from "../styles";
 import type { FormSeed, IndexInfo, Modality, QueryMode, Selection, UploadedQuery } from "../types";
 import MediaInput from "./MediaInput";
-
-const MAX_K = 100;
 
 // Which part of the query media becomes the query vector
 const MODALITY_HELP: Record<Modality, string> = {
@@ -59,7 +57,10 @@ export default function NewSearch({ indexes, selection, seed, modelLoaded, onBac
   const mode = QUERY_TYPES.some((t) => t.mode === storedMode) ? storedMode : "file";
   const [text, setText] = usePersistentState("form.text", seed?.text ?? "");
   const [keys, setKeys] = usePersistentState<string[] | null>("form.keys", seed?.brainKeys ?? null);
-  const [k, setK] = usePersistentState<number | "">("form.k", seed?.k ?? 12);
+  const [threshold, setThreshold] = usePersistentState<number>(
+    "form.threshold_value",
+    seed?.threshold ?? DEFAULT_THRESHOLD,
+  );
   const [modality, setModality] = usePersistentState<Modality | null>("form.modality", seed?.modality ?? null);
   const [upload, setUpload] = usePersistentState<UploadedQuery | null>("form.upload", null);
   const [name, setName] = usePersistentState("form.name", "");
@@ -80,14 +81,13 @@ export default function NewSearch({ indexes, selection, seed, modelLoaded, onBac
   const preferred = mode === "samples" ? options.find((m) => selection?.stored[m]) : undefined;
   const activeModality = modality && options.includes(modality) ? modality : preferred ?? options[0] ?? null;
 
-  const kValid = typeof k === "number" && k >= 1 && k <= MAX_K;
   const hasQuery =
     mode === "text"
       ? text.trim().length > 0
       : mode === "samples"
         ? !!selection && !selection.error && !!activeModality
         : !!media && !!activeModality;
-  const canSubmit = chosen.length > 0 && kValid && hasQuery && !submitting;
+  const canSubmit = chosen.length > 0 && hasQuery && !submitting;
 
   const submit = async () => {
     if (!canSubmit) return;
@@ -99,7 +99,7 @@ export default function NewSearch({ indexes, selection, seed, modelLoaded, onBac
           : { mode, file: media, modality: activeModality };
     setSubmitting(true);
     try {
-      await onSearch({ ...query, brain_keys: brainKeys, k, run_name: name.trim() });
+      await onSearch({ ...query, brain_keys: brainKeys, threshold, run_name: name.trim() });
       setName("");
     } finally {
       setSubmitting(false);
@@ -239,20 +239,18 @@ export default function NewSearch({ indexes, selection, seed, modelLoaded, onBac
         )}
 
         <FormField
-          label="Number of matches"
-          description="Per index"
-          error={kValid ? undefined : `Enter 1 to ${MAX_K}`}
+          label="Similarity threshold"
+          description={`Shows every sample scoring at least this, from any index (up to ${MAX_RESULTS} each). Strong matches usually score 0.6 to 0.9`}
           control={
-            <Input
-              type={InputType.Number}
-              size={Size.Sm}
-              min={1}
-              max={MAX_K}
-              value={k === "" ? "" : String(k)}
-              error={!kValid}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                setK(e.target.value === "" ? "" : parseInt(e.target.value, 10))
-              }
+            <SingleValueSlider
+              min={0}
+              max={1}
+              step={0.01}
+              labeled
+              debounceDelay={0}
+              value={threshold}
+              // rounded so float steps like 0.6500000001 don't reach the search
+              onChange={(v) => setThreshold(Math.round(v * 100) / 100)}
             />
           }
         />

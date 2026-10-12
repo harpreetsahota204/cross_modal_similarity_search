@@ -6,6 +6,7 @@ import NewSearch from "./components/NewSearch";
 import Setup from "./components/Setup";
 import { usePanelClient } from "./hooks/usePanelClient";
 import { useForgetPersistentState, usePersistentState } from "./hooks/usePersistentState";
+import { DEFAULT_THRESHOLD } from "./format";
 import type { FormSeed, Page, PanelData, PanelMethods, Run } from "./types";
 
 type Props = {
@@ -41,12 +42,16 @@ export default function CrossModalRetrievalView({ data, schema }: Props) {
         text: run.query_type === "text" ? String(run.query ?? "") : "",
         modality: run.modality,
         brainKeys: run.brain_keys.length ? run.brain_keys : run.sections.map((s) => s.key),
-        k: run.k,
+        threshold: run.threshold ?? DEFAULT_THRESHOLD,
       }),
     [openForm],
   );
 
-  const onApply = useCallback((runId: string, key?: string) => call("apply_run", { run_id: runId, key }), [call]);
+  const onApply = useCallback(
+    (runId: string, keys?: string[]) => call("apply_run", { run_id: runId, keys }),
+    [call],
+  );
+  const onClearView = useCallback(() => call("clear_view"), [call]);
   const onDelete = useCallback((runId: string) => call("delete_run", { run_id: runId }), [call]);
   const onBuild = useCallback(() => call("build_index"), [call]);
   const onRebuild = useCallback((key: string) => call("rebuild_table", { key }), [call]);
@@ -102,6 +107,7 @@ export default function CrossModalRetrievalView({ data, schema }: Props) {
       hasIndexes={indexes.some((i) => i.ok)}
       applied={data?.applied ?? null}
       onApply={onApply}
+      onClearView={onClearView}
       onClone={onClone}
       onDelete={onDelete}
       onRefresh={() => call("refresh")}

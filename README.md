@@ -140,19 +140,23 @@ becomes its vector. A video clip can be searched by its frames, its sound, or
 both. This is where cross-modal search gets interesting: search an audio
 index with the frames of a video to find what *sounds* like what it *shows*.
 
-Set **Number of matches** (per index), optionally name the search, and click
-**Search**.
+Set the **Similarity threshold**, optionally name the search, and click
+**Search**. You get every sample whose cosine similarity to the query is at
+least the threshold, from any index, so one search can return mostly audio
+matches and few video matches, or the other way round. The default, 0.65,
+suits most searches: strong cross-modal matches usually score 0.6 to 0.9.
+Lower it if a search comes back empty. Each index returns at most 500 results.
 
 The webcam and microphone need the App on `localhost` or https, which is a
 browser rule. The browser asks for permission the first time.
 
 ### 3. Work with results
 
-The matches load into the grid in rank order. Every search is saved to the
-panel's home page, where you can:
+The matches from every index load into the grid, most similar first. Every
+search is saved to the panel's home page, where you can:
 
 - Click a search to show its results again. A search of several indexes has a
-  button per index
+  colored chip per index: click chips to turn their results on or off
 - **Clone** a search to tweak it and run it again
 - **Delete** searches you no longer need
 
@@ -246,7 +250,11 @@ index this panel builds is an ordinary FiftyOne similarity index made with
    query to every vector in the table by **cosine similarity**, the cosine of
    the angle between two vectors. 1 means they point the same way, 0 means
    unrelated
-4. **The top matches open in the grid**, ordered from most to least similar
+4. **Everything at or above your threshold opens in the grid.** Results from
+   every index are merged into one ranking, most similar first. The scores
+   are comparable across indexes because every modality lives in the same
+   embedding space. A sample several indexes found appears once, at its best
+   score
 
 ## How well it works
 

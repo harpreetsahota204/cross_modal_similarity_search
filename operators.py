@@ -324,7 +324,7 @@ class Search(foo.Operator):
             description=(
                 "Searches EmbeddingGemma 2 LanceDB indexes with text or with "
                 "the selected samples, across modalities, and returns the "
-                "nearest samples of each index"
+                "samples of each index that meet a similarity threshold"
             ),
             icon="travel_explore",
             dynamic=True,
@@ -332,7 +332,7 @@ class Search(foo.Operator):
 
     def resolve_input(self, ctx: ExecutionContext) -> types.Property:
         """Builds the form: query type (text, or the selected samples if
-        any), the query, the indexes to search and ``k``.
+        any), the query, the indexes to search and the similarity threshold.
         """
         inputs = types.Object()
         indexes = engine.list_indexes(ctx.dataset)
@@ -392,8 +392,16 @@ class Search(foo.Operator):
                 choices=index_choices.choices, allow_user_input=False
             ),
         )
-        inputs.int(
-            "k", default=12, label="Results per index", min=1, max=engine.MAX_K
+        inputs.float(
+            "threshold",
+            default=engine.DEFAULT_THRESHOLD,
+            label="Similarity threshold",
+            description=(
+                "Returns every sample whose cosine similarity to the query "
+                "meets this, up to %d per index" % engine.MAX_RESULTS
+            ),
+            min=-1.0,
+            max=1.0,
         )
 
         return types.Property(inputs, view=types.View(label="Cross-modal search"))
@@ -410,7 +418,7 @@ class Search(foo.Operator):
             ctx.dataset,
             query,
             brain_keys=ctx.params.get("brain_keys"),
-            k=ctx.params.get("k", 12),
+            threshold=ctx.params.get("threshold", engine.DEFAULT_THRESHOLD),
         )
         return {"query": query.describe(), "results": sections}
 

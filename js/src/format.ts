@@ -2,6 +2,12 @@ import type { MediaKind, Modality, Run } from "./types";
 
 export const MIDDLE_DOT = "\u00B7";
 
+/** Mirrors the Python engine's DEFAULT_THRESHOLD (cosine similarity). */
+export const DEFAULT_THRESHOLD = 0.65;
+
+/** Mirrors the Python engine's MAX_RESULTS (per index). */
+export const MAX_RESULTS = 500;
+
 export const MODALITY_LABELS: Record<Modality, string> = {
   image: "Image",
   video: "Video",
@@ -42,6 +48,12 @@ export function formatQuery(run: Run): string {
     return `${run.query.length} selected ${run.query.length === 1 ? "sample" : "samples"}`;
   }
   return run.query ?? "";
+}
+
+/** The search's cutoff, e.g. "score ≥ 0.65"; older searches saved a k. */
+export function formatCutoff(run: Run): string {
+  if (run.threshold != null) return `score \u2265 ${run.threshold.toFixed(2)}`;
+  return run.k != null ? `k=${run.k}` : "";
 }
 
 /** "just now", "5 min ago", "3 h ago", then the date. */

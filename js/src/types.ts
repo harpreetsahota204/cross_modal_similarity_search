@@ -48,15 +48,19 @@ export type Run = {
   query_label: string | null;
   modality: Modality | null;
   brain_keys: string[];
-  k: number;
+  /** Minimum cosine similarity; missing on searches saved with ``k`` */
+  threshold?: number | null;
+  k?: number;
   status: "completed" | "failed";
   error: string | null;
   sections: RunSection[];
+  /** Distinct result samples across indexes, as the grid shows them */
   result_count: number;
   creation_time: string;
 };
 
-export type Applied = { run_id: string; key: string };
+/** The search whose results are in the grid, and which of its indexes. */
+export type Applied = { run_id: string; keys: string[] };
 
 export type PanelData = {
   status?: Status;
@@ -89,7 +93,7 @@ export type FormSeed = {
   text: string;
   modality: Modality | null;
   brainKeys: string[];
-  k: number;
+  threshold: number;
 };
 
 export type Page = "home" | "new_search" | "indexes";

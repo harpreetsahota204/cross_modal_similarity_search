@@ -29,6 +29,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Optional, TypedDict
 
+import fiftyone as fo
 import fiftyone.operators as foo
 import fiftyone.operators.types as types
 from fiftyone.operators.executor import ExecutionContext
@@ -73,11 +74,13 @@ class Run(TypedDict):
     query_label: Optional[str]  # e.g. 'audio of clip.mp4'
     modality: Optional[str]  # what the query was embedded as (not for text)
     brain_keys: list[str]  # indexes searched; [] means all
-    k: int  # results per index
+    # minimum cosine similarity of a result; searches saved before the
+    # threshold existed have None here and a "k" (results per index) instead
+    threshold: Optional[float]
     status: str  # "completed" or "failed"
     error: Optional[str]
     sections: list[StoredSection]
-    result_count: int  # total hits across indexes
+    result_count: int  # distinct samples across indexes, as the grid shows
     creation_time: str  # ISO 8601, UTC
 
 
@@ -125,7 +128,7 @@ class CrossModalRetrievalPanel(foo.Panel):
         self._refresh(ctx)
 
     def search(self, ctx: ExecutionContext) -> None:
-        """Runs a search, saves it, and shows its first results in the grid.
+        """Runs a search, saves it, and shows its results in the grid.
 
         A failed search is saved too, with its error, so it can be cloned
         and fixed.
@@ -137,7 +140,7 @@ class CrossModalRetrievalPanel(foo.Panel):
             file: ``{"name", "data"}`` with a base64 data URL (file mode)
             modality: what to embed the query as (samples and file modes)
             brain_keys: the indexes to search; empty means all
-            k: results per index
+            threshold: the minimum cosine similarity a result needs
             run_name: optional name for the saved search
         """
         params = ctx.params
@@ -149,7 +152,9 @@ class CrossModalRetrievalPanel(foo.Panel):
             "query_label": None,
             "modality": params.get("modality"),
             "brain_keys": params.get("brain_keys") or [],
-            "k": params.get("k", 12),
+            "threshold": float(
+                params.get("threshold", engine.DEFAULT_THRESHOLD)
+            ),
             "status": "completed",
             "error": None,
             "sections": [],
@@ -165,7 +170,7 @@ class CrossModalRetrievalPanel(foo.Panel):
                 query,
                 # [] would match no index; None means all of them
                 brain_keys=run["brain_keys"] or None,
-                k=run["k"],
+                threshold=run["threshold"],
             )
             run["sections"] = [_section(s) for s in sections]
         except Exception as e:
@@ -179,7 +184,7 @@ class CrossModalRetrievalPanel(foo.Panel):
         if run["status"] == "completed" and not found and errors:
             run.update(status="failed", error=errors[0])
 
-        run["result_count"] = sum(len(s["ids"]) for s in run["sections"])
+        run["result_count"] = _unique_count(run["sections"])
         if not run["run_name"]:
             run["run_name"] = _default_name(run)
 
@@ -189,7 +194,7 @@ class CrossModalRetrievalPanel(foo.Panel):
         ctx.panel.set_data("model_loaded", engine.is_model_loaded())
 
         if found:
-            self._apply(ctx, run, found[0]["key"])
+            self._apply(ctx, run)
         elif run["status"] == "failed":
             ctx.ops.notify(run["error"], variant="error")
         else:
@@ -198,20 +203,20 @@ class CrossModalRetrievalPanel(foo.Panel):
         ctx.panel.set_data("runs", history.list())
 
     def apply_run(self, ctx: ExecutionContext) -> None:
-        """Shows a saved search's results for one of its indexes in the
+        """Shows a saved search's results for some of its indexes in the
         grid.
 
         Params:
             run_id: the saved search
-            key (None): the index whose results to show; defaults to the
-                first index with results
+            keys (None): the indexes whose results to show, merged by score;
+                defaults to every index with results
         """
         run = _History(ctx).get(ctx.params.get("run_id"))
         if not run:
             ctx.ops.notify("Search not found", variant="error")
             return
 
-        self._apply(ctx, run, ctx.params.get("key"))
+        self._apply(ctx, run, ctx.params.get("keys"))
 
     def delete_run(self, ctx: ExecutionContext) -> None:
         """Deletes a saved search.
@@ -306,29 +311,33 @@ class CrossModalRetrievalPanel(foo.Panel):
         )
 
     def _apply(
-        self, ctx: ExecutionContext, run: Run, key: Optional[str] = None
+        self,
+        ctx: ExecutionContext,
+        run: Run,
+        keys: Optional[list[str]] = None,
     ) -> None:
-        """Loads one index's results of a search into the grid, best first.
+        """Loads some indexes' results of a search into the grid, best first.
+
+        With several indexes, their results are merged into one ranking by
+        cosine similarity, which is comparable because every index shares
+        EmbeddingGemma 2's embedding space. A sample found by more than one
+        index appears once, at its best score.
 
         Args:
             ctx: the execution context
             run: the saved search
-            key (None): the index to show; falls back to the first index with
+            keys (None): the indexes to show; by default, every index with
                 results
         """
         sections = [s for s in run.get("sections", []) if s["ids"]]
-        section = next((s for s in sections if s["key"] == key), None)
-        section = section or (sections[0] if sections else None)
-        if section is None:
+        chosen = [s for s in sections if s["key"] in (keys or [])]
+        chosen = chosen or sections
+        if not chosen:
             ctx.ops.notify("This search has no results", variant="warning")
             return
 
         try:
-            # load_brain_view() covers every group slice the index holds;
-            # ordered=True keeps the ranking in the grid
-            view = ctx.dataset.load_brain_view(section["key"]).select(
-                section["ids"], ordered=True
-            )
+            view = _results_view(ctx.dataset, chosen)
         except Exception as e:
             ctx.ops.notify("Failed to show results: %s" % e, variant="error")
             return
@@ -337,7 +346,8 @@ class CrossModalRetrievalPanel(foo.Panel):
         ctx.ops.clear_selected_samples()
         ctx.ops.set_view(view)
         ctx.panel.set_state(
-            "applied", {"run_id": run["run_id"], "key": section["key"]}
+            "applied",
+            {"run_id": run["run_id"], "keys": [s["key"] for s in chosen]},
         )
 
     def _query(self, ctx: ExecutionContext) -> engine.Query:
@@ -428,6 +438,9 @@ class _History(object):
                 continue
 
             run = dict(run)
+            # searches saved before result_count was de-duplicated counted a
+            # sample once per index that found it, so recount from the IDs
+            run["result_count"] = _unique_count(run.get("sections", []))
             run["sections"] = [
                 {
                     "key": s["key"],
@@ -445,6 +458,14 @@ class _History(object):
         return runs
 
 
+def _unique_count(sections: list[StoredSection]) -> int:
+    """Counts the distinct samples across sections.
+
+    A sample that several indexes found counts once, matching the merged grid.
+    """
+    return len({sample_id for s in sections for sample_id in s["ids"]})
+
+
 def _section(section: engine.Section) -> StoredSection:
     """Reduces an engine search section to what's saved: IDs and scores."""
     return {
@@ -454,6 +475,50 @@ def _section(section: engine.Section) -> StoredSection:
         "scores": [h["score"] for h in section["hits"]],
         "error": section["error"],
     }
+
+
+def _results_view(
+    dataset: fo.Dataset, sections: list[StoredSection]
+) -> fo.DatasetView:
+    """Builds the grid view of one or more indexes' results, best first.
+
+    Args:
+        dataset: the dataset the search ran on
+        sections: the indexes' saved results; each must have IDs
+
+    Returns:
+        a view of the result samples, ordered by descending score
+    """
+    # load_brain_view() covers every group slice the index holds;
+    # ordered=True keeps the ranking in the grid
+    if len(sections) == 1:
+        return dataset.load_brain_view(sections[0]["key"]).select(
+            sections[0]["ids"], ordered=True
+        )
+
+    # merge the rankings, keeping each sample's best score across indexes
+    best: dict[str, float] = {}
+    for section in sections:
+        for sample_id, score in zip(section["ids"], section["scores"]):
+            best[sample_id] = max(score, best.get(sample_id, score))
+    ids = sorted(best, key=best.get, reverse=True)
+
+    if dataset.media_type != "group":
+        return dataset.select(ids, ordered=True)
+
+    # indexes on a grouped dataset can hold different slices (e.g. a video
+    # slice and an audio slice), so flatten all of them into one grid;
+    # _allow_mixed lets slices of different media types share it
+    slices: set[str] = set()
+    for section in sections:
+        slices.update(
+            dataset.load_brain_view(section["key"]).distinct(
+                "%s.name" % dataset.group_field
+            )
+        )
+    return dataset.select_group_slices(
+        sorted(slices), _allow_mixed=True
+    ).select(ids, ordered=True)
 
 
 def _stored_query(params: dict[str, Any]) -> Any:

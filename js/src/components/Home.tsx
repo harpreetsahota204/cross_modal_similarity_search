@@ -19,7 +19,7 @@ import {
   Variant,
 } from "@voxel51/voodo";
 import React, { useMemo } from "react";
-import { MIDDLE_DOT, MODALITY_LABELS, formatQuery, formatTime } from "../format";
+import { MIDDLE_DOT, MODALITY_LABELS, formatCutoff, formatQuery, formatTime } from "../format";
 import { HIGHLIGHT, PAGE, POINTER, TOOLTIP_TEXT, modalityChip } from "../styles";
 import type { Applied, QueryMode, Run } from "../types";
 
@@ -43,7 +43,8 @@ type Props = {
   runs: Run[];
   hasIndexes: boolean;
   applied: Applied | null;
-  onApply: (runId: string, key?: string) => void;
+  onApply: (runId: string, keys?: string[]) => void;
+  onClearView: () => void;
   onClone: (run: Run) => void;
   onDelete: (runId: string) => void;
   onRefresh: () => void;
@@ -57,6 +58,7 @@ export default function Home({
   hasIndexes,
   applied,
   onApply,
+  onClearView,
   onClone,
   onDelete,
   onRefresh,
@@ -68,6 +70,8 @@ export default function Home({
       runs.map((run) => {
         const done = run.status === "completed" && run.result_count > 0;
         const isApplied = applied?.run_id === run.run_id;
+        // the indexes of this search whose results are in the grid now
+        const shownKeys = isApplied ? applied?.keys ?? [] : [];
         const found = run.sections.filter((s) => s.count > 0);
         const keys = run.sections.map((s) => s.key).join(", ");
 
@@ -99,13 +103,13 @@ export default function Home({
                     </Pill>
                   ) : (
                     <Text variant={TextVariant.BodySecondary} color={TextColor.Muted}>
-                      {run.result_count} {run.result_count === 1 ? "result" : "results"}
+                      {run.result_count} {run.result_count === 1 ? "match" : "matches"}
                     </Text>
                   )}
                 </Stack>
                 <Text variant={TextVariant.BodySecondary} color={TextColor.Secondary}>
                   {formatQuery(run)}
-                  {keys ? ` ${MIDDLE_DOT} ${keys}` : ""} {MIDDLE_DOT} k={run.k}
+                  {keys ? ` ${MIDDLE_DOT} ${keys}` : ""} {MIDDLE_DOT} {formatCutoff(run)}
                 </Text>
                 <Text variant={TextVariant.BodySecondary} color={TextColor.Muted}>
                   {formatTime(run.creation_time)}
@@ -157,29 +161,36 @@ export default function Home({
             additionalContent:
               found.length > 1 ? (
                 <Stack orientation={Orientation.Row} spacing={Spacing.Xs} style={{ flexWrap: "wrap" }}>
-                  {found.map((s) => (
-                    <Tooltip
-                      key={s.key}
-                      content={tip(
-                        `Filter to the ${s.count} ${MODALITY_LABELS[s.modality].toLowerCase()} results from ${s.key}`,
-                      )}
-                    >
-                      <Button
-                        size={Size.Xs}
-                        variant={Variant.Secondary}
-                        style={modalityChip(s.modality, isApplied && applied?.key === s.key)}
-                        onClick={stop(() => onApply(run.run_id, s.key))}
+                  {found.map((s) => {
+                    const on = shownKeys.includes(s.key);
+                    const what = `the ${s.count} ${MODALITY_LABELS[s.modality].toLowerCase()} ${s.count === 1 ? "match" : "matches"} from ${s.key}`;
+                    // each chip toggles its index in or out of the grid;
+                    // turning off the last one shows the whole dataset
+                    const next = on ? shownKeys.filter((k) => k !== s.key) : [...shownKeys, s.key];
+                    return (
+                      <Tooltip
+                        key={s.key}
+                        content={tip(
+                          on ? `Hide ${what}` : shownKeys.length ? `Add ${what}` : `Filter to ${what}`,
+                        )}
                       >
-                        {MODALITY_LABELS[s.modality]} {MIDDLE_DOT} {s.key} ({s.count})
-                      </Button>
-                    </Tooltip>
-                  ))}
+                        <Button
+                          size={Size.Xs}
+                          variant={Variant.Secondary}
+                          style={modalityChip(s.modality, on)}
+                          onClick={stop(() => (next.length ? onApply(run.run_id, next) : onClearView()))}
+                        >
+                          {MODALITY_LABELS[s.modality]} {MIDDLE_DOT} {s.key} ({s.count})
+                        </Button>
+                      </Tooltip>
+                    );
+                  })}
                 </Stack>
               ) : undefined,
           },
         };
       }),
-    [runs, applied, onApply, onClone, onDelete],
+    [runs, applied, onApply, onClearView, onClone, onDelete],
   );
 
   return (
