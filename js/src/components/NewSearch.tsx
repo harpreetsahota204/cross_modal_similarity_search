@@ -8,8 +8,8 @@ import {
   Input,
   Justify,
   Orientation,
+  Pill,
   RadioGroup,
-  Select,
   SingleValueSlider,
   Size,
   Spacing,
@@ -19,12 +19,13 @@ import {
   TextArea,
   TextColor,
   TextVariant,
+  Tooltip,
   Variant,
 } from "@voxel51/voodo";
 import React, { useState } from "react";
 import { DEFAULT_THRESHOLD, MAX_RESULTS, MIDDLE_DOT, MODALITY_LABELS, QUERY_MODALITIES } from "../format";
 import { usePersistentState } from "../hooks/usePersistentState";
-import { ACTIVE_BOX, INFO_CARD, PAGE } from "../styles";
+import { ACTIVE_BOX, INFO_CARD, PAGE, TOOLTIP_TEXT, modalityChip } from "../styles";
 import type { FormSeed, IndexInfo, Modality, QueryMode, Selection, UploadedQuery } from "../types";
 import MediaInput from "./MediaInput";
 
@@ -116,35 +117,48 @@ export default function NewSearch({ indexes, selection, seed, modelLoaded, onBac
       <Stack orientation={Orientation.Column} spacing={Spacing.Lg}>
         <FormField
           label="Search against"
-          description="The indexes your query is compared to. Pick more than one to get a separate set of matches from each"
+          description="Matches from every index you pick are ranked together"
+          error={chosen.length ? undefined : "Pick at least one index"}
           control={
-            <Select
-              exclusive={false}
-              value={brainKeys}
-              onChange={(v) => setKeys(Array.isArray(v) ? v : v ? [v] : [])}
-              options={usable.map((i) => ({
-                id: i.key,
-                data: { label: `${i.key}: samples embedded as ${MODALITY_LABELS[i.modality].toLowerCase()}` },
-              }))}
-            />
+            <Stack orientation={Orientation.Row} spacing={Spacing.Xs} align={Align.Center} style={{ flexWrap: "wrap" }}>
+              {usable.map((i) => {
+                const on = brainKeys.includes(i.key);
+                const details = [
+                  `Samples embedded as ${MODALITY_LABELS[i.modality].toLowerCase()}`,
+                  `${i.count} vectors`,
+                  `${i.dim}d`,
+                  i.slices ? `slices ${i.slices.join(", ")}` : null,
+                ]
+                  .filter(Boolean)
+                  .join(` ${MIDDLE_DOT} `);
+                return (
+                  <Tooltip key={i.key} content={<span style={TOOLTIP_TEXT}>{details}</span>}>
+                    {on ? (
+                      <Pill
+                        size={Size.Sm}
+                        style={modalityChip(i.modality, false)}
+                        onRemove={() => setKeys(brainKeys.filter((k) => k !== i.key))}
+                      >
+                        {MODALITY_LABELS[i.modality]} {MIDDLE_DOT} {i.key}
+                      </Pill>
+                    ) : (
+                      // removed indexes stay as faint pills, so adding one back is one click
+                      <Button
+                        size={Size.Xs}
+                        variant={Variant.Borderless}
+                        leadingIcon={IconName.Add}
+                        style={{ border: "1px dashed var(--fo-palette-divider)", borderRadius: 999 }}
+                        onClick={() => setKeys([...brainKeys, i.key])}
+                      >
+                        {i.key}
+                      </Button>
+                    )}
+                  </Tooltip>
+                );
+              })}
+            </Stack>
           }
         />
-
-        {chosen.length > 0 && (
-          <div style={INFO_CARD}>
-            <Stack orientation={Orientation.Column} spacing={Spacing.Xs}>
-              <Text variant={TextVariant.BodySecondary} color={TextColor.Secondary}>
-                Model: google/embeddinggemma-2 {MIDDLE_DOT} Backend: lancedb {MIDDLE_DOT} Metric: cosine
-              </Text>
-              {chosen.map((i) => (
-                <Text key={i.key} variant={TextVariant.BodySecondary} color={TextColor.Secondary}>
-                  {i.key}: {MODALITY_LABELS[i.modality]} {MIDDLE_DOT} {i.count} vectors {MIDDLE_DOT} {i.dim}d
-                  {i.slices ? ` ${MIDDLE_DOT} slices ${i.slices.join(", ")}` : ""}
-                </Text>
-              ))}
-            </Stack>
-          </div>
-        )}
 
         <Stack orientation={Orientation.Row} spacing={Spacing.Xs} style={{ flexWrap: "wrap" }}>
           {QUERY_TYPES.map((t) => (
