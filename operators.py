@@ -352,7 +352,8 @@ class Search(foo.Operator):
         query_types = types.RadioGroup()
         query_types.add_choice("text", label="Text")
         # offer the selection only if it can be embedded
-        if selection and not selection["error"]:
+        selection_ok = bool(selection) and not selection["error"]
+        if selection_ok:
             query_types.add_choice(
                 "samples", label="%d selected samples" % selection["count"]
             )
@@ -365,7 +366,9 @@ class Search(foo.Operator):
             view=query_types,
         )
 
-        if ctx.params.get("query_type", "text") == "text":
+        # the param can still say "samples" after the selection was cleared
+        # or became unusable, so fall back to text then
+        if ctx.params.get("query_type", "text") == "text" or not selection_ok:
             inputs.str("text", required=True, label="Text")
         else:
             inputs.enum(

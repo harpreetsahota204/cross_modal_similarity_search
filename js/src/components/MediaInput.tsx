@@ -317,7 +317,9 @@ export default function MediaInput({ value, onChange }: Props) {
       const type = recorder.mimeType || mimeType || "";
       const mp4 = type.includes("mp4");
       const ext = kind === "audio" ? (mp4 ? ".m4a" : ".weba") : mp4 ? ".mp4" : ".webm";
-      const blob = new Blob(chunks, { type });
+      // drop the codecs: "video/webm;codecs=vp8,opus" has a comma, and a data
+      // URL's payload starts at the first comma, so <video> couldn't decode it
+      const blob = new Blob(chunks, { type: type.split(";")[0] });
       if (!blob.size) {
         setError("Nothing was recorded");
         return;
@@ -358,7 +360,7 @@ export default function MediaInput({ value, onChange }: Props) {
           <img src={value.data} alt={value.name} style={FILL} />
         ) : value.kind === "video" ? (
           // the key keeps React from reusing the live camera's <video>, whose
-          // srcObject (the stopped stream) would override src and play black
+          // srcObject (the stopped stream) would override src
           <video key="playback" src={value.data} controls preload="metadata" style={FILL} />
         ) : value.kind === "audio" ? (
           <audio src={value.data} controls preload="metadata" style={{ width: "90%" }} />
