@@ -50,10 +50,13 @@ type Props = {
   modelLoaded: boolean;
   onBack: () => void;
   onSearch: (params: Record<string, unknown>) => Promise<void>;
+  onRebuild: (key: string) => void;
 };
 
-export default function NewSearch({ indexes, selection, seed, modelLoaded, onBack, onSearch }: Props) {
+export default function NewSearch({ indexes, selection, seed, modelLoaded, onBack, onSearch, onRebuild }: Props) {
   const usable = indexes.filter((i) => i.ok);
+  // the brain run outlived its LanceDB table: shown, but not searchable
+  const broken = indexes.filter((i) => !i.ok);
   const [storedMode, setMode] = usePersistentState<QueryMode>("form.mode", seed?.mode ?? "text");
   const mode = QUERY_TYPES.some((t) => t.mode === storedMode) ? storedMode : "file";
   const [text, setText] = usePersistentState("form.text", seed?.text ?? "");
@@ -156,6 +159,30 @@ export default function NewSearch({ indexes, selection, seed, modelLoaded, onBac
                   </Tooltip>
                 );
               })}
+              {broken.map((i) => (
+                <Tooltip
+                  key={i.key}
+                  content={
+                    <span style={TOOLTIP_TEXT}>
+                      {i.error ?? "LanceDB table not found"}. Click to rebuild it from {i.field}
+                    </span>
+                  }
+                >
+                  <Button
+                    size={Size.Xs}
+                    variant={Variant.Borderless}
+                    leadingIcon={IconName.Warning}
+                    style={{
+                      border: "1px dashed var(--fo-palette-danger-plainColor, #e5484d)",
+                      borderRadius: 999,
+                      color: "var(--fo-palette-text-secondary)",
+                    }}
+                    onClick={() => onRebuild(i.key)}
+                  >
+                    {i.key}
+                  </Button>
+                </Tooltip>
+              ))}
             </Stack>
           }
         />

@@ -85,6 +85,7 @@ export default function CrossModalRetrievalView({ data, schema }: Props) {
         modelLoaded={!!data?.model_loaded}
         onBack={() => setPage("home")}
         onSearch={onSearch}
+        onRebuild={onRebuild}
       />
     );
   }

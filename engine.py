@@ -478,9 +478,42 @@ def load_index(dataset: Any, brain_key: str) -> Any:
     Returns:
         a :class:`fiftyone.brain.internal.core.lancedb.LanceDBSimilarityIndex`
     """
-    return dataset.load_brain_results(
+    results = dataset.load_brain_results(
         brain_key, uri=lancedb_uri(), cache=False
     )
+
+    # The brain finds the table in ``db.table_names()``, which lists only
+    # the first 10 tables of the URI by default, so tables past those look
+    # missing. Open the table by name instead
+    if results._table is None:
+        try:
+            name = results.config.table_name
+            results._table = results._db.open_table(name)
+        except ValueError:
+            # the table really is missing
+            pass
+
+    return results
+
+
+def _drop_tables(results: Any) -> None:
+    """Drops an index's LanceDB table and its ``_filter`` table, if present.
+
+    Replaces the brain's ``cleanup()``, which skips tables past the first 10
+    of the URI (see :func:`load_index`).
+
+    Args:
+        results: a loaded LanceDB similarity index
+    """
+    table = results.config.table_name
+    for name in (table, table + "_filter"):
+        try:
+            results._db.drop_table(name)
+        except ValueError:
+            # never created, or already gone
+            pass
+
+    results._table = None
 
 
 def describe_index(dataset: Any, index: IndexInfo) -> dict[str, Any]:
@@ -558,7 +591,7 @@ def rebuild_table(dataset: Any, brain_key: str) -> int:
     results = load_index(dataset, brain_key)
     if results.table is not None:
         # drop the partial table so the rebuild doesn't duplicate rows
-        results.cleanup()
+        _drop_tables(results)
 
     view = dataset.load_brain_view(brain_key).exists(field)
     ids, vectors = view.values(["id", field])
@@ -1269,7 +1302,7 @@ def delete_index(dataset: Any, brain_key: str) -> None:
         brain_key: the index's brain key
     """
     try:
-        load_index(dataset, brain_key).cleanup()
+        _drop_tables(load_index(dataset, brain_key))
     except Exception as e:
         logger.warning("Failed to drop table of '%s': %s", brain_key, e)
 
