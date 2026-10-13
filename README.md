@@ -1,4 +1,4 @@
-# Cross-Modal Retrieval
+# Cross-Modal Retrieval Panel with Embedding Gemma 2
 
 <div align="center">
 <p align="center">
@@ -31,6 +31,8 @@ models**
 
 </p>
 </div>
+
+![preview](embedding_gemma_full_exploration.gif)
 
 Search the images, video and audio in a FiftyOne dataset with a sentence, with
 other samples, with a file, or with your own webcam and microphone. Type "a dog
